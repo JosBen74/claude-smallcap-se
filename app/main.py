@@ -15,6 +15,10 @@ from .reporting.daily_report import DailyReport
 from .reporting.performance import PerformanceTracker
 from .reporting.notifications import send_daily_report_email, send_smart_report_email
 from .reporting.smart_report import generate_smart_daily_report, format_smart_email
+from .claude.analyst import Analyst
+from .analysis.technical import TechnicalAnalysis
+from .analysis.fundamental import FundamentalAnalysis
+from .data.yfinance_se import get_stock_info, get_swedish_stock
 
 
 console = Console()
@@ -73,8 +77,8 @@ def daily_run(send_email: bool = False) -> None:
     )
 
 
-def weekly_analysis() -> None:
-    """Veckovis analys med Claude."""
+def weekly_analysis(send_email: bool = False) -> None:
+    """Veckovis djupanalys med Claude."""
     console.print("[bold blue]Claude Small-Cap SE - Veckoanalys[/bold blue]\n")
 
     settings = get_settings()
@@ -84,6 +88,10 @@ def weekly_analysis() -> None:
         console.print("[red]Fel: ANTHROPIC_API_KEY saknas i .env[/red]")
         return
 
+    # Ladda portfölj
+    portfolio = Portfolio()
+    portfolio.update_prices()
+
     # Ladda marknadsdata
     console.print("Laddar marknadsdata...")
     market_data = MarketData()
@@ -91,18 +99,214 @@ def weekly_analysis() -> None:
     stocks = market_data.load_multiple(SAMPLE_TICKERS)
     console.print(f"Laddade {len(stocks)} aktier")
 
+    # Benchmark-data
+    benchmark_week = market_data.get_benchmark_change(5)
+    benchmark_ytd = market_data.get_benchmark_change(252)  # ca 1 ar
+
     # Screena aktier
     console.print("\nScreenar kandidater...")
     screener = Screener()
     candidates = screener.get_candidates(stocks, top_n=5)
-    console.print(f"Hittade {len(candidates)} kandidater")
+    console.print(f"Hittade {len(candidates)} kandidater\n")
+
+    # Formatera portfoljsammanfattning
+    portfolio_summary = _format_portfolio_summary(portfolio)
+
+    # Formatera kandidatdata med teknisk/fundamental analys
+    console.print("Analyserar kandidater (teknisk + fundamental)...")
+    candidate_stocks, technical_signals = _format_candidates_data(candidates)
+
+    # Berakna portfolj YTD (forenklad)
+    portfolio_ytd = 0.0
+    initial_capital = settings.initial_capital or 100000
+    if initial_capital > 0:
+        portfolio_ytd = ((portfolio.total_value / initial_capital) - 1) * 100
+
+    # Anropa Claude
+    console.print("\n[bold]Skickar till Claude for djupanalys...[/bold]")
+    console.print("(Detta kan ta 30-60 sekunder)\n")
+
+    analyst = Analyst()
+    try:
+        result = analyst.weekly_analysis(
+            portfolio_summary=portfolio_summary,
+            candidate_stocks=candidate_stocks,
+            omxspi_change=benchmark_week,
+            benchmark_ytd=benchmark_ytd,
+            portfolio_ytd=portfolio_ytd,
+            technical_signals=technical_signals,
+        )
+
+        # Visa resultat
+        _display_weekly_result(result)
+
+        # Spara rapport
+        _save_weekly_report(result, portfolio)
+
+        # Skicka e-post om flagga ar satt
+        if send_email:
+            _send_weekly_email(result, portfolio)
+
+    except Exception as e:
+        console.print(f"[red]Fel vid Claude-analys: {e}[/red]")
+
+
+def _format_portfolio_summary(portfolio: Portfolio) -> str:
+    """Formatera portfoljsammanfattning for Claude."""
+    lines = [
+        f"Totalt varde: {portfolio.total_value:,.0f} SEK",
+        f"Kassa: {portfolio.state.cash:,.0f} SEK ({portfolio.state.cash / portfolio.total_value * 100:.1f}%)",
+        f"Antal positioner: {len(portfolio.state.positions)}",
+        "",
+        "Nuvarande positioner:",
+    ]
+
+    for ticker, pos in portfolio.state.positions.items():
+        weight = pos.market_value / portfolio.total_value * 100
+        lines.append(
+            f"  - {ticker}: {pos.shares} st @ {pos.avg_cost:.2f} SEK "
+            f"(nu: {pos.current_price:.2f} SEK, {pos.unrealized_pnl_pct:+.1f}%, vikt: {weight:.1f}%)"
+        )
+
+    return "\n".join(lines)
+
+
+def _format_candidates_data(candidates) -> tuple[str, str]:
+    """Formatera kandidatdata med teknisk och fundamental analys."""
+    candidate_lines = []
+    signal_lines = []
 
     for result in candidates:
-        console.print(f"  {result.stock.ticker}: score {result.score:.0f}")
+        stock = result.stock
+        ticker = stock.ticker
 
-    # Här skulle Claude-analys anropas
-    console.print("\n[yellow]Claude-analys är inte implementerad i detta läge.[/yellow]")
-    console.print("Kör med --with-claude för full analys.")
+        try:
+            # Hamta mer data
+            info = get_stock_info(ticker)
+            history = get_swedish_stock(ticker, period="3mo")
+
+            # Teknisk analys
+            ta = TechnicalAnalysis(history)
+            rsi = ta.rsi() or 0
+            sma20 = ta.sma(20)
+            sma50 = ta.sma(50)
+            trend = ta.get_trend_signal()
+
+            # Fundamental analys
+            fa = FundamentalAnalysis(info)
+            val_score, val_details = fa.get_valuation_score()
+
+            # Kursforandring
+            current = history["Close"].iloc[-1]
+            week_ago = history["Close"].iloc[-5] if len(history) >= 5 else current
+            month_ago = history["Close"].iloc[-21] if len(history) >= 21 else current
+
+            week_change = ((current - week_ago) / week_ago) * 100
+            month_change = ((current - month_ago) / month_ago) * 100
+
+            # Kandidatinfo
+            candidate_lines.append(f"""
+### {ticker} ({info.get('name', 'N/A')})
+- Pris: {stock.current_price:.2f} SEK
+- Market Cap: {(stock.market_cap or 0) / 1e9:.2f} MDSEK
+- P/E: {stock.pe_ratio or 'N/A'}
+- P/B: {info.get('pb_ratio', 'N/A')}
+- ROE: {info.get('roe', 'N/A')}
+- Vecka: {week_change:+.1f}%, Manad: {month_change:+.1f}%
+- Varderingsscore: {val_score}/100
+- Screening score: {result.score:.0f}/100
+""")
+
+            # Tekniska signaler
+            signal_lines.append(
+                f"- {ticker}: RSI={rsi:.0f}, Trend={trend}, "
+                f"SMA20={sma20:.2f if sma20 else 'N/A'}, SMA50={sma50:.2f if sma50 else 'N/A'}"
+            )
+
+        except Exception as e:
+            candidate_lines.append(f"\n### {ticker}\n- Fel vid datahamtning: {e}\n")
+            signal_lines.append(f"- {ticker}: Data saknas")
+
+    return "\n".join(candidate_lines), "\n".join(signal_lines)
+
+
+def _display_weekly_result(result: dict) -> None:
+    """Visa veckoanalysresultat."""
+    console.print("[bold green]KOPREKOMMODATIONER[/bold green]")
+    for rec in result.get("buy_recommendations", []):
+        console.print(f"  {rec['ticker']}: {rec.get('allocation_pct', 5)}% av portfolj")
+        console.print(f"    Risk: {rec.get('risk_level', 'medium')}")
+        console.print(f"    Motivering: {rec.get('reasoning', 'N/A')}")
+        console.print()
+
+    if result.get("sell_recommendations"):
+        console.print("[bold red]SALJREKOMMENDATIONER[/bold red]")
+        for rec in result["sell_recommendations"]:
+            console.print(f"  {rec['ticker']}: {rec.get('action', 'sell')}")
+            console.print(f"    Motivering: {rec.get('reasoning', 'N/A')}")
+            console.print()
+
+    if result.get("hold_positions"):
+        console.print("[bold yellow]BEHALL[/bold yellow]")
+        console.print(f"  {', '.join(result['hold_positions'])}")
+        console.print()
+
+    console.print("[bold]MARKNADSUTBLICK[/bold]")
+    console.print(f"  {result.get('market_outlook', 'N/A')}")
+    console.print(f"\n  Konfidensniva: {result.get('confidence_level', 'medium')}")
+
+
+def _save_weekly_report(result: dict, portfolio: Portfolio) -> None:
+    """Spara veckorapport till fil."""
+    from pathlib import Path
+    import json
+
+    reports_dir = Path("data/reports")
+    reports_dir.mkdir(parents=True, exist_ok=True)
+
+    timestamp = datetime.now().strftime("%Y-%m-%d")
+    filepath = reports_dir / f"weekly_{timestamp}.json"
+
+    report_data = {
+        "date": timestamp,
+        "portfolio_value": portfolio.total_value,
+        "analysis": result,
+    }
+
+    with open(filepath, "w", encoding="utf-8") as f:
+        json.dump(report_data, f, ensure_ascii=False, indent=2)
+
+    console.print(f"\n[dim]Rapport sparad: {filepath}[/dim]")
+
+
+def _send_weekly_email(result: dict, portfolio: Portfolio) -> None:
+    """Skicka veckorapport via e-post."""
+    from .reporting.notifications import send_email_report
+
+    subject = f"Veckoanalys {datetime.now().strftime('%Y-%m-%d')} | {portfolio.total_value:,.0f} SEK"
+
+    body = f"""VECKOVIS DJUPANALYS - Claude Small-Cap SE
+{'='*50}
+
+KOPREKOMMODATIONER
+"""
+    for rec in result.get("buy_recommendations", []):
+        body += f"\n{rec['ticker']} ({rec.get('allocation_pct', 5)}% allokering)\n"
+        body += f"  Risk: {rec.get('risk_level', 'medium')}\n"
+        body += f"  {rec.get('reasoning', '')}\n"
+
+    if result.get("sell_recommendations"):
+        body += "\nSALJREKOMMENDATIONER\n"
+        for rec in result["sell_recommendations"]:
+            body += f"\n{rec['ticker']}: {rec.get('reasoning', '')}\n"
+
+    body += f"\nMARKNADSUTBLICK\n{result.get('market_outlook', '')}\n"
+    body += f"\nKonfidensniva: {result.get('confidence_level', 'medium')}\n"
+
+    if send_email_report(subject, body):
+        console.print("[green]Veckorapport skickad via e-post![/green]")
+    else:
+        console.print("[red]Kunde inte skicka e-post[/red]")
 
 
 def show_portfolio() -> None:
@@ -241,7 +445,7 @@ def main() -> None:
     if args.command == "daily":
         daily_run(send_email=args.email)
     elif args.command == "weekly":
-        weekly_analysis()
+        weekly_analysis(send_email=args.email)
     elif args.command == "portfolio":
         show_portfolio()
     elif args.command == "performance":
