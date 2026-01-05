@@ -1,0 +1,46 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "claude-smallcap-se"
+version = "0.1.0"
+description = "AI-driven aktiehandel för Stockholmsbörsen Small Cap med Claude"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "anthropic>=0.40.0",
+    "yfinance>=0.2.40",
+    "pandas>=2.0.0",
+    "numpy>=1.24.0",
+    "python-dotenv>=1.0.0",
+    "rich>=13.0.0",
+    "schedule>=1.2.0",
+    "httpx>=0.27.0",
+    "pydantic>=2.0.0",
+]
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+exclude = ["tests*", "data*"]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "ruff>=0.1.0",
+    "mypy>=1.0.0",
+]
+
+[project.scripts]
+smallcap = "app.main:main"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
