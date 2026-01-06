@@ -84,6 +84,19 @@ def generate_smart_daily_report(portfolio: Portfolio) -> dict[str, Any]:
 
     # Analysera varje position
     for ticker, pos in portfolio.state.positions.items():
+        # Hämta dagens förändring
+        daily_change_pct = 0.0
+        daily_change_sek = 0.0
+        try:
+            history = get_swedish_stock(ticker, period="5d")
+            if len(history) >= 2:
+                prev_close = history["Close"].iloc[-2]
+                current = history["Close"].iloc[-1]
+                daily_change_pct = ((current - prev_close) / prev_close) * 100
+                daily_change_sek = (current - prev_close) * pos.shares
+        except:
+            pass
+
         position_data = {
             "ticker": ticker,
             "shares": pos.shares,
@@ -92,6 +105,8 @@ def generate_smart_daily_report(portfolio: Portfolio) -> dict[str, Any]:
             "market_value": pos.market_value,
             "unrealized_pnl": pos.unrealized_pnl,
             "unrealized_pnl_pct": pos.unrealized_pnl_pct,
+            "daily_change_pct": daily_change_pct,
+            "daily_change_sek": daily_change_sek,
         }
         report["positions"].append(position_data)
 
@@ -276,10 +291,14 @@ DINA POSITIONER
 """
 
     for pos in report["positions"]:
+        daily_pct = pos.get('daily_change_pct', 0)
+        daily_sek = pos.get('daily_change_sek', 0)
         body += f"""
 {pos['ticker']}
-  {pos['shares']} st @ {pos['avg_cost']:.2f} SEK → {pos['current_price']:.2f} SEK
-  Värde: {pos['market_value']:,.0f} SEK ({pos['unrealized_pnl_pct']:+.1f}%)
+  {pos['shares']} st @ {pos['avg_cost']:.2f} SEK -> {pos['current_price']:.2f} SEK
+  Idag:  {daily_pct:+.1f}% ({daily_sek:+,.0f} SEK)
+  Totalt: {pos['unrealized_pnl_pct']:+.1f}% ({pos['unrealized_pnl']:+,.0f} SEK)
+  Värde: {pos['market_value']:,.0f} SEK
 """
 
     # Alerts

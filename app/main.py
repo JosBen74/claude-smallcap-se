@@ -399,12 +399,13 @@ def smart_daily(send_email: bool = False) -> None:
 
     console.print("[bold]DINA POSITIONER[/bold]")
     for pos in report["positions"]:
-        pnl_style = "green" if pos["unrealized_pnl_pct"] >= 0 else "red"
-        console.print(
-            f"  {pos['ticker']}: {pos['shares']} st @ {pos['avg_cost']:.2f} "
-            f"-> {pos['current_price']:.2f} SEK "
-            f"[{pnl_style}]({pos['unrealized_pnl_pct']:+.1f}%)[/{pnl_style}]"
-        )
+        daily_pct = pos.get("daily_change_pct", 0)
+        daily_sek = pos.get("daily_change_sek", 0)
+        daily_style = "green" if daily_pct >= 0 else "red"
+        total_style = "green" if pos["unrealized_pnl_pct"] >= 0 else "red"
+        console.print(f"  {pos['ticker']}: {pos['shares']} st @ {pos['avg_cost']:.2f} -> {pos['current_price']:.2f} SEK")
+        console.print(f"    Idag:  [{daily_style}]{daily_pct:+.1f}% ({daily_sek:+,.0f} SEK)[/{daily_style}]")
+        console.print(f"    Totalt: [{total_style}]{pos['unrealized_pnl_pct']:+.1f}% ({pos['unrealized_pnl']:+,.0f} SEK)[/{total_style}]")
 
     # Rekommendationer
     recs = report["recommendations"]
