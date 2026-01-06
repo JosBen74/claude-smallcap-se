@@ -60,6 +60,7 @@ INITIAL_CAPITAL=100000
 ### Data (`app/data/`)
 - `yfinance_se.py`: Svenska aktier via yFinance (.ST suffix)
 - `market_data.py`: Kombinerad dataklass
+- `news.py`: Nyhetsaggregering från RSS-källor (DI, Avanza Blogg)
 
 ### Analys (`app/analysis/`)
 - `screener.py`: Filtrera aktier (market cap, P/E, volym)
@@ -107,9 +108,10 @@ cash_reserve_pct: 10%
 
 ### Veckovis
 1. Screena nya kandidater (`screener.get_candidates()`)
-2. Claude analyserar och rankar (`analyst.weekly_analysis()`)
-3. Generera köp/sälj-rekommendationer
-4. Logga beslut (`decision_log.log_decision()`)
+2. Hämta nyheter för kandidater och portfölj (`get_news_summary()`)
+3. Claude analyserar med nyheter (`analyst.weekly_analysis()`)
+4. Generera köp/sälj-rekommendationer med nyhetspåverkan
+5. Logga beslut (`decision_log.log_decision()`)
 
 ## Benchmark
 

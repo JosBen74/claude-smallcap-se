@@ -88,6 +88,7 @@ class Analyst:
         benchmark_ytd: float,
         portfolio_ytd: float,
         technical_signals: str,
+        news_summary: str = "",
     ) -> dict[str, Any]:
         """Veckovis portföljanalys.
 
@@ -98,6 +99,7 @@ class Analyst:
             benchmark_ytd: Benchmark YTD (%)
             portfolio_ytd: Portfölj YTD (%)
             technical_signals: Tekniska signaler som text
+            news_summary: Nyhetssammanfattning för veckan
 
         Returns:
             Dict med köp/sälj-rekommendationer
@@ -109,6 +111,7 @@ class Analyst:
             benchmark_ytd=f"{benchmark_ytd:+.1f}",
             portfolio_ytd=f"{portfolio_ytd:+.1f}",
             technical_signals=technical_signals,
+            news_summary=news_summary or "*Inga nyheter hämtades denna vecka.*",
         )
 
         response = self._call_claude(prompt, max_tokens=3000)

@@ -8,6 +8,7 @@ from rich.console import Console
 from .config import get_settings
 from .data.market_data import MarketData
 from .data.yfinance_se import SAMPLE_TICKERS
+from .data.news import get_news_summary
 from .analysis.screener import Screener
 from .trading.portfolio import Portfolio
 from .trading.rules import RiskManager
@@ -109,6 +110,13 @@ def weekly_analysis(send_email: bool = False) -> None:
     candidates = screener.get_candidates(stocks, top_n=5)
     console.print(f"Hittade {len(candidates)} kandidater\n")
 
+    # Hämta nyheter för kandidater och portföljinnehav
+    console.print("Hämtar nyheter...")
+    all_tickers = [c.stock.ticker for c in candidates]
+    all_tickers.extend(portfolio.state.positions.keys())
+    news_summary = get_news_summary(list(set(all_tickers)), days=7)
+    console.print(f"Nyhetssammanfattning klar\n")
+
     # Formatera portfoljsammanfattning
     portfolio_summary = _format_portfolio_summary(portfolio)
 
@@ -135,6 +143,7 @@ def weekly_analysis(send_email: bool = False) -> None:
             benchmark_ytd=benchmark_ytd,
             portfolio_ytd=portfolio_ytd,
             technical_signals=technical_signals,
+            news_summary=news_summary,
         )
 
         # Visa resultat
@@ -232,11 +241,19 @@ def _format_candidates_data(candidates) -> tuple[str, str]:
 
 def _display_weekly_result(result: dict) -> None:
     """Visa veckoanalysresultat."""
+    # Nyhetssammanfattning om den finns
+    if result.get("news_summary"):
+        console.print("[bold cyan]NYHETSSAMMANFATTNING[/bold cyan]")
+        console.print(f"  {result['news_summary']}")
+        console.print()
+
     console.print("[bold green]KOPREKOMMODATIONER[/bold green]")
     for rec in result.get("buy_recommendations", []):
         console.print(f"  {rec['ticker']}: {rec.get('allocation_pct', 5)}% av portfolj")
         console.print(f"    Risk: {rec.get('risk_level', 'medium')}")
         console.print(f"    Motivering: {rec.get('reasoning', 'N/A')}")
+        if rec.get("news_impact"):
+            console.print(f"    [cyan]Nyhetspåverkan: {rec['news_impact']}[/cyan]")
         console.print()
 
     if result.get("sell_recommendations"):
@@ -244,6 +261,8 @@ def _display_weekly_result(result: dict) -> None:
         for rec in result["sell_recommendations"]:
             console.print(f"  {rec['ticker']}: {rec.get('action', 'sell')}")
             console.print(f"    Motivering: {rec.get('reasoning', 'N/A')}")
+            if rec.get("news_impact"):
+                console.print(f"    [cyan]Nyhetspåverkan: {rec['news_impact']}[/cyan]")
             console.print()
 
     if result.get("hold_positions"):

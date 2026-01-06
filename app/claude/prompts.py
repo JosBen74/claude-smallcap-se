@@ -16,18 +16,24 @@ WEEKLY_ANALYSIS_PROMPT = """Du är en erfaren aktieanalytiker specialiserad på 
 ## Tekniska signaler
 {technical_signals}
 
+## Nyheter & sentiment
+{news_summary}
+
 ## Din uppgift
 1. Analysera varje kandidataktie baserat på:
    - Fundamental värdering (P/E, P/B, marginal)
    - Tekniska signaler (trend, RSI, momentum)
    - Marknadsposition och konkurrenssituation
+   - **VIKTIGT: Relevanta nyheter och deras potentiella påverkan**
    - Risker och triggers
 
 2. Identifiera de 3 bästa köpkandidaterna med motivering
+   - Inkludera hur eventuella nyheter stödjer eller motsäger köpbeslutet
 
 3. Identifiera positioner att avyttra eller minska med motivering
+   - Beakta särskilt negativa nyheter som kan påverka kursen
 
-4. Ge en kort marknadsutblick (2-3 meningar)
+4. Ge en kort marknadsutblick (2-3 meningar) baserat på makronyheter
 
 Svara i JSON-format:
 {{
@@ -37,6 +43,7 @@ Svara i JSON-format:
       "action": "buy",
       "allocation_pct": 5,
       "reasoning": "Kort motivering...",
+      "news_impact": "Hur nyheter påverkar rekommendationen (eller 'Inga relevanta nyheter')",
       "risk_level": "low|medium|high",
       "target_price": null,
       "stop_loss_pct": -15
@@ -46,11 +53,13 @@ Svara i JSON-format:
     {{
       "ticker": "TICKER",
       "action": "sell|reduce",
-      "reasoning": "Kort motivering..."
+      "reasoning": "Kort motivering...",
+      "news_impact": "Hur nyheter påverkar sälj-rekommendationen"
     }}
   ],
   "hold_positions": ["TICKER1", "TICKER2"],
-  "market_outlook": "Marknadsutblick...",
+  "market_outlook": "Marknadsutblick baserad på makronyheter...",
+  "news_summary": "Kort sammanfattning av veckans viktigaste nyheter",
   "confidence_level": "low|medium|high"
 }}
 """
