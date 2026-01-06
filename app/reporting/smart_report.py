@@ -58,6 +58,9 @@ def generate_smart_daily_report(portfolio: Portfolio) -> dict[str, Any]:
     risk_manager = RiskManager(portfolio)
     alerts = risk_manager.check_all()
 
+    # Beräkna dagens totala förändring
+    total_daily_change_sek = 0.0
+
     # Grundläggande portföljdata
     report = {
         "date": datetime.now().strftime("%Y-%m-%d"),
@@ -67,6 +70,7 @@ def generate_smart_daily_report(portfolio: Portfolio) -> dict[str, Any]:
             "cash": portfolio.state.cash,
             "positions_value": portfolio.positions_value,
             "num_positions": len(portfolio.state.positions),
+            "daily_change_sek": 0.0,  # Uppdateras efter positionsanalys
         },
         "benchmark": {
             "name": "OMXSPI",
@@ -97,6 +101,8 @@ def generate_smart_daily_report(portfolio: Portfolio) -> dict[str, Any]:
         except:
             pass
 
+        total_daily_change_sek += daily_change_sek
+
         position_data = {
             "ticker": ticker,
             "shares": pos.shares,
@@ -109,6 +115,9 @@ def generate_smart_daily_report(portfolio: Portfolio) -> dict[str, Any]:
             "daily_change_sek": daily_change_sek,
         }
         report["positions"].append(position_data)
+
+    # Uppdatera total dagsförändring
+    report["portfolio"]["daily_change_sek"] = total_daily_change_sek
 
     # Claude-analys om API-nyckel finns
     if settings.anthropic_api_key:
@@ -274,13 +283,14 @@ def format_smart_email(report: dict) -> tuple[str, str]:
     """
     p = report["portfolio"]
 
-    subject = f"Börsrapport {report['date']} | {p['total_value']:,.0f} SEK"
-
+    daily_sek = p.get('daily_change_sek', 0)
+    subject = f"Börsrapport {report['date']} | {p['total_value']:,.0f} SEK ({daily_sek:+,.0f} idag)"
     body = f"""DAGLIG BÖRSRAPPORT - {report['date']}
 {'='*50}
 
 PORTFÖLJÖVERSIKT
 Totalt värde: {p['total_value']:,.0f} SEK
+Dagens utveckling: {daily_sek:+,.0f} SEK
 Kassa: {p['cash']:,.0f} SEK
 Positioner: {p['positions_value']:,.0f} SEK
 

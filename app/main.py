@@ -391,7 +391,10 @@ def smart_daily(send_email: bool = False) -> None:
     # Visa rapport
     console.print("[bold]PORTFÖLJÖVERSIKT[/bold]")
     p = report["portfolio"]
+    daily_total = p.get('daily_change_sek', 0)
+    daily_style = "green" if daily_total >= 0 else "red"
     console.print(f"Totalt värde: {p['total_value']:,.0f} SEK")
+    console.print(f"Dagens utveckling: [{daily_style}]{daily_total:+,.0f} SEK[/{daily_style}]")
     console.print(f"Kassa: {p['cash']:,.0f} SEK")
     console.print(f"Positioner: {p['positions_value']:,.0f} SEK\n")
 
